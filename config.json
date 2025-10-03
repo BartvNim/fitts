@@ -1,0 +1,14 @@
+{
+  "device": {
+    "uri": "any:?debugLevel=2",
+    "description": "Any connected pointing device"
+  },
+  "display": {
+    "width": 1200,
+    "height": 800,
+    "target_size": 25,
+    "background_color": [20, 20, 25],
+    "target_color": [100, 200, 255],
+    "text_color": [220, 220, 220]
+  }
+}

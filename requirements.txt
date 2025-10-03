@@ -1,0 +1,4 @@
+pygame>=2.5.0
+libpointing
+Cython>=3.0.0
+setuptools>=65.0.0
