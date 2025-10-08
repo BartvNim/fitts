@@ -12,7 +12,6 @@ from datetime import datetime
 import sys
 import threading
 
-
 # --- libpointing imports ---
 sys.path.insert(0, str(Path(__file__).parent / "libpointing/bindings/Python/cython"))
 try:
@@ -30,6 +29,7 @@ TRANSITION = 2
 EXPERIMENT = 3
 BREAK_SCREEN = 4
 END = 5
+COUNTDOWN = 6  # new state
 
 EXPERIMENT_SEED = 42
 random.seed(EXPERIMENT_SEED)
@@ -58,6 +58,10 @@ enteredEdgeTime = -1
 hasEnteredEdge = False
 reactionTimes = []
 
+# Countdown
+countdownStartTime = 0
+countdownDuration = 3  # seconds
+
 # Mouse / click tracking
 mouseX, mouseY = 0, 0
 clicked = False
@@ -65,13 +69,24 @@ hit = False
 insideEdgeLastFrame = False
 overshootCount = 0
 
+# --- NEW: store last raw deltas from libpointing ---
+last_dx = 0
+last_dy = 0
+last_buttons = 0
+
 # Logging
-logData = "trialNumber,time(ms),mouseX,mouseY,targetX,targetY,targetSize,formerTargetX,formerTargetY,formerTargetSize,distanceCenter,distanceEdge,timeSinceTarget,timeSinceEdge,clicked,hit,overshootCount\n"
+logData = (
+    "trialNumber,time(ms),mouseX,mouseY,targetX,targetY,targetSize,"
+    "formerTargetX,formerTargetY,formerTargetSize,distanceCenter,distanceEdge,"
+    "timeSinceTarget,timeSinceEdge,clicked,hit,overshootCount,"
+    "raw_dx,raw_dy,raw_buttons\n"
+)
 logSaved = False
 logFileName = f"./mouse_log_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
 
 # Screen config
 WIDTH, HEIGHT = 800, 400
+
 
 # Thread-safe raw mouse position
 class RawPointer:
@@ -89,13 +104,19 @@ class RawPointer:
         with self.lock:
             return int(self.x), int(self.y)
 
+
 pointer = RawPointer(WIDTH, HEIGHT)
 
 # ==========================
 # libpointing device callback
 # ==========================
 def pointing_callback(timestamp, dx, dy, buttons):
+    global last_dx, last_dy, last_buttons
     pointer.update(dx, dy)
+    last_dx = dx
+    last_dy = dy
+    last_buttons = buttons
+
 
 # ==========================
 # Target logic
@@ -108,9 +129,9 @@ def pickNewTarget():
     formerTargetX, formerTargetY, formerTargetSize = targetX, targetY, targetSize
     targetSize = random.randint(30, 100)
     if targetOnLeft:
-        targetX = random.randint(targetSize//2, WIDTH//2 - targetSize//2)
+        targetX = random.randint(targetSize // 2, WIDTH // 2 - targetSize // 2)
     else:
-        targetX = random.randint(WIDTH//2 + targetSize//2, WIDTH - targetSize//2)
+        targetX = random.randint(WIDTH // 2 + targetSize // 2, WIDTH - targetSize // 2)
     targetOnLeft = not targetOnLeft
     targetY = HEIGHT // 2
 
@@ -120,14 +141,17 @@ def pickNewTarget():
     insideEdgeLastFrame = False
     overshootCount = 0
 
+
 # ==========================
 # Logging
 # ==========================
 def logMouseData():
     global logData, clicked, hit, insideEdgeLastFrame, overshootCount
+    global last_dx, last_dy, last_buttons
+
     x, y = pointer.get_pos()
-    distanceCenter = ((x - targetX)**2 + (y - targetY)**2)**0.5
-    distanceEdge = max(0, distanceCenter - targetSize/2)
+    distanceCenter = ((x - targetX) ** 2 + (y - targetY) ** 2) ** 0.5
+    distanceEdge = max(0, distanceCenter - targetSize / 2)
 
     global enteredEdgeTime, hasEnteredEdge
     if not hasEnteredEdge and distanceEdge == 0:
@@ -148,7 +172,13 @@ def logMouseData():
     elif state == EXPERIMENT:
         currentTrialNumber = experimentCount + 1
 
-    logData += f"{currentTrialNumber},{pygame.time.get_ticks()},{x},{y},{targetX},{targetY},{targetSize},{formerTargetX},{formerTargetY},{formerTargetSize},{distanceCenter},{distanceEdge},{timeSinceTarget},{timeSinceEdge},{int(clicked)},{int(hit)},{overshootCount}\n"
+    logData += (
+        f"{currentTrialNumber},{pygame.time.get_ticks()},{x},{y},{targetX},{targetY},{targetSize},"
+        f"{formerTargetX},{formerTargetY},{formerTargetSize},{distanceCenter},{distanceEdge},"
+        f"{timeSinceTarget},{timeSinceEdge},{int(clicked)},{int(hit)},{overshootCount},"
+        f"{last_dx},{last_dy},{last_buttons}\n"
+    )
+
     clicked = False
     hit = False
 
@@ -156,35 +186,31 @@ def logMouseData():
 # --- Pointer drawing ---
 def drawPointer(surface):
     x, y = pointer.get_pos()
-    pointer_size = 10  # half-length of crosshair
+    pointer_size = 10
     color = (0, 100, 255)
-
-    # Crosshair lines
     pygame.draw.line(surface, color, (x - pointer_size, y), (x + pointer_size, y), 2)
     pygame.draw.line(surface, color, (x, y - pointer_size), (x, y + pointer_size), 2)
-
-    # Center dot
     pygame.draw.circle(surface, color, (x, y), 3)
 
 
 def saveLog():
     global logSaved
     Path("./tests").mkdir(parents=True, exist_ok=True)
-    with open('./tests/' + logFileName, "w") as f:
+    with open("./tests/" + logFileName, "w") as f:
         f.write(logData)
     print(f"Log saved to: {logFileName}")
     logSaved = True
+
 
 # ==========================
 # Pygame Initialization
 # ==========================
 pygame.init()
-screen = pygame.display.set_mode((0, 0), pygame.NOFRAME)  # fullscreen
-WIDTH, HEIGHT = screen.get_size()  # get actual screen resolution
+screen = pygame.display.set_mode((0, 0), pygame.NOFRAME)
+WIDTH, HEIGHT = screen.get_size()
 pygame.display.set_caption("1D Fitts' Law Experiment")
 font = pygame.font.Font(None, 24)
 clock = pygame.time.Clock()
-
 
 # Initialize libpointing
 device_uri = b"any:?debugLevel=2"
@@ -192,7 +218,6 @@ pointing_device = PointingDevice(device_uri)
 pointing_device.setCallback(pointing_callback)
 pygame.mouse.set_visible(False)
 
-# Start first target
 pickNewTarget()
 
 # ==========================
@@ -201,11 +226,9 @@ pickNewTarget()
 running = True
 while running:
     screen.fill((240, 240, 240))
-    pygame.draw.line(screen, (180, 180, 180), (0, HEIGHT//2), (WIDTH, HEIGHT//2), 2)
-
+    pygame.draw.line(screen, (180, 180, 180), (0, HEIGHT // 2), (WIDTH, HEIGHT // 2), 2)
     x, y = pointer.get_pos()
 
-    # Event Handling
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -222,20 +245,20 @@ while running:
                 elif event.key == pygame.K_c:
                     experimentCount = 0
                     reactionTimes.clear()
-                    state = EXPERIMENT
-                    pickNewTarget()
+                    state = COUNTDOWN
+                    countdownStartTime = time.time()
             elif state == BREAK_SCREEN and event.key == pygame.K_c:
-                state = EXPERIMENT
-                pickNewTarget()
+                state = COUNTDOWN
+                countdownStartTime = time.time()
         elif event.type == pygame.MOUSEBUTTONDOWN:
             clicked = True
-            distance = ((x - targetX)**2 + (y - targetY)**2)**0.5
+            distance = ((x - targetX) ** 2 + (y - targetY) ** 2) ** 0.5
             if state == START_SCREEN:
                 state = TRIAL
                 trialCount = 0
                 pickNewTarget()
             elif state == TRIAL:
-                if distance <= targetSize/2:
+                if distance <= targetSize / 2:
                     hit = True
                     trialCount += 1
                     if trialCount >= totalTrialTargets:
@@ -245,7 +268,7 @@ while running:
                 else:
                     hit = False
             elif state == EXPERIMENT:
-                if distance <= targetSize/2:
+                if distance <= targetSize / 2:
                     hit = True
                     reactionTimes.append(pygame.time.get_ticks() - targetShownTime)
                     experimentCount += 1
@@ -258,46 +281,55 @@ while running:
                 else:
                     hit = False
 
-    # State Screens
+    # Draw current state text
     def drawText(text, y, size=24):
-        t = pygame.font.Font(None, size).render(text, True, (0,0,0))
-        rect = t.get_rect(center=(WIDTH//2, y))
+        t = pygame.font.Font(None, size).render(text, True, (0, 0, 0))
+        rect = t.get_rect(center=(WIDTH // 2, y))
         screen.blit(t, rect)
 
     if state == START_SCREEN:
-        drawText("Fitts' Law Experiment", HEIGHT//2 - 40)
-        drawText("Click to begin a short trial session.", HEIGHT//2 + 10, 18)
-        drawText("Try clicking the targets as fast and accurately as you can.", HEIGHT//2 + 40, 18)
+        drawText("Fitts' Law Experiment", HEIGHT // 2 - 40)
+        drawText("Click to begin a short trial session.", HEIGHT // 2 + 10, 18)
+        drawText("Try clicking the targets as fast and accurately as you can.", HEIGHT // 2 + 40, 18)
     elif state == TRIAL:
         drawText("Trial Session", 30)
-        drawText(f"Trial {trialCount+1} of {totalTrialTargets}", HEIGHT - 30, 14)
+        drawText(f"Trial {trialCount + 1} of {totalTrialTargets}", HEIGHT - 30, 14)
     elif state == TRANSITION:
-        drawText("Trial Session Complete!", HEIGHT//2 - 60)
-        drawText("Press 'C' to continue or 'R' to repeat the trial.", HEIGHT//2 - 20, 18)
+        drawText("Trial Session Complete!", HEIGHT // 2 - 60)
+        drawText("Press 'C' to continue or 'R' to repeat the trial.", HEIGHT // 2 - 20, 18)
     elif state == EXPERIMENT:
         drawText("Main Experiment", 30)
-        drawText(f"Trial {experimentCount+1} of {totalExperimentTargets}", HEIGHT - 30, 14)
+        drawText(f"Trial {experimentCount + 1} of {totalExperimentTargets}", HEIGHT - 30, 14)
     elif state == BREAK_SCREEN:
-        drawText("Take a short break!", HEIGHT//2 - 30)
-        drawText(f"You've completed {experimentCount} out of {totalExperimentTargets} trials.", HEIGHT//2, 18)
-        drawText("Press 'C' to continue when ready.", HEIGHT//2 + 40, 18)
+        drawText("Take a short break!", HEIGHT // 2 - 30)
+        drawText(f"You've completed {experimentCount} of {totalExperimentTargets} trials.", HEIGHT // 2, 18)
+        drawText("Press 'C' to continue when ready.", HEIGHT // 2 + 40, 18)
+    elif state == COUNTDOWN:
+        elapsed = time.time() - countdownStartTime
+        remaining = countdownDuration - int(elapsed)
+        if remaining > 0:
+            drawText("Get ready...", HEIGHT // 2 - 60)
+            drawText(str(remaining), HEIGHT // 2, 64)
+        else:
+            state = EXPERIMENT
+            pickNewTarget()
     elif state == END:
-        drawText("Experiment Complete!", HEIGHT//2 - 40)
-        avgTime = sum(reactionTimes)/len(reactionTimes) if reactionTimes else 0
-        drawText(f"Average Reaction Time: {avgTime:.2f} ms", HEIGHT//2)
+        drawText("Experiment Complete!", HEIGHT // 2 - 40)
+        avgTime = sum(reactionTimes) / len(reactionTimes) if reactionTimes else 0
+        drawText(f"Average Reaction Time: {avgTime:.2f} ms", HEIGHT // 2)
         if not logSaved:
             saveLog()
 
-    # Draw target during TRIAL/EXPERIMENT
     if state in (TRIAL, EXPERIMENT):
-        pygame.draw.circle(screen, (200,0,0), (int(targetX), int(targetY)), targetSize//2)
+        pygame.draw.circle(screen, (200, 0, 0), (int(targetX), int(targetY)), targetSize // 2)
         logMouseData()
+
     drawPointer(screen)
     pygame.display.flip()
     clock.tick(60)
-    PointingDevice.idle(1)  # process libpointing events
+    PointingDevice.idle(1)
 
-# Cleanup
 saveLog()
 del pointing_device
 pygame.quit()
+
