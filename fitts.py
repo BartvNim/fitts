@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 1D Fitts' Law Experiment in Pygame using raw mouse input from libpointing
+Logs summed dx/dy per frame so that mouseX/Y matches movement
 """
 
 import pygame
@@ -69,17 +70,16 @@ hit = False
 insideEdgeLastFrame = False
 overshootCount = 0
 
-# --- NEW: store last raw deltas from libpointing ---
-last_dx = 0
-last_dy = 0
-last_buttons = 0
+# --- NEW: accumulate raw deltas per frame ---
+frame_dx = 0
+frame_dy = 0
+frame_buttons = 0
 
 # Logging
 logData = (
     "trialNumber,time(ms),mouseX,mouseY,targetX,targetY,targetSize,"
     "formerTargetX,formerTargetY,formerTargetSize,distanceCenter,distanceEdge,"
-    "timeSinceTarget,timeSinceEdge,clicked,hit,overshootCount,"
-    "raw_dx,raw_dy,raw_buttons\n"
+    "timeSinceTarget,timeSinceEdge,clicked,hit,overshootCount,raw_dx,raw_dy,raw_buttons\n"
 )
 logSaved = False
 logFileName = f"./mouse_log_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
@@ -111,12 +111,11 @@ pointer = RawPointer(WIDTH, HEIGHT)
 # libpointing device callback
 # ==========================
 def pointing_callback(timestamp, dx, dy, buttons):
-    global last_dx, last_dy, last_buttons
+    global frame_dx, frame_dy, frame_buttons
     pointer.update(dx, dy)
-    last_dx = dx
-    last_dy = dy
-    last_buttons = buttons
-
+    frame_dx += dx
+    frame_dy += dy
+    frame_buttons = buttons  # store latest button state
 
 # ==========================
 # Target logic
@@ -141,13 +140,12 @@ def pickNewTarget():
     insideEdgeLastFrame = False
     overshootCount = 0
 
-
 # ==========================
 # Logging
 # ==========================
 def logMouseData():
     global logData, clicked, hit, insideEdgeLastFrame, overshootCount
-    global last_dx, last_dy, last_buttons
+    global frame_dx, frame_dy, frame_buttons
 
     x, y = pointer.get_pos()
     distanceCenter = ((x - targetX) ** 2 + (y - targetY) ** 2) ** 0.5
@@ -172,16 +170,19 @@ def logMouseData():
     elif state == EXPERIMENT:
         currentTrialNumber = experimentCount + 1
 
+    # Log the summed dx/dy for this frame
     logData += (
         f"{currentTrialNumber},{pygame.time.get_ticks()},{x},{y},{targetX},{targetY},{targetSize},"
         f"{formerTargetX},{formerTargetY},{formerTargetSize},{distanceCenter},{distanceEdge},"
         f"{timeSinceTarget},{timeSinceEdge},{int(clicked)},{int(hit)},{overshootCount},"
-        f"{last_dx},{last_dy},{last_buttons}\n"
+        f"{frame_dx},{frame_dy},{frame_buttons}\n"
     )
 
+    # Reset accumulated deltas after logging
+    frame_dx = 0
+    frame_dy = 0
     clicked = False
     hit = False
-
 
 # --- Pointer drawing ---
 def drawPointer(surface):
@@ -192,7 +193,6 @@ def drawPointer(surface):
     pygame.draw.line(surface, color, (x, y - pointer_size), (x, y + pointer_size), 2)
     pygame.draw.circle(surface, color, (x, y), 3)
 
-
 def saveLog():
     global logSaved
     Path("./tests").mkdir(parents=True, exist_ok=True)
@@ -200,7 +200,6 @@ def saveLog():
         f.write(logData)
     print(f"Log saved to: {logFileName}")
     logSaved = True
-
 
 # ==========================
 # Pygame Initialization
@@ -233,7 +232,7 @@ while running:
         if event.type == pygame.QUIT:
             running = False
         elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE or event.key == pygame.K_q:
+            if event.key in (pygame.K_ESCAPE, pygame.K_q):
                 running = False
             if event.key == pygame.K_s:
                 saveLog()
@@ -332,4 +331,3 @@ while running:
 saveLog()
 del pointing_device
 pygame.quit()
-
