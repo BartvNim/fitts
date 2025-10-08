@@ -35,6 +35,17 @@ COUNTDOWN = 6  # new state
 EXPERIMENT_SEED = 42
 random.seed(EXPERIMENT_SEED)
 
+# Fitts' Law fixed conditions
+distances = [200, 400, 600, 800]
+widths = [30, 50, 70]             
+repetitions = 10                 
+
+# Create all combinations
+conditions = [(A, W) for A in distances for W in widths]
+trial_sequence = conditions * repetitions
+
+random.shuffle(trial_sequence)
+
 state = START_SCREEN
 
 # Target properties
@@ -124,15 +135,22 @@ def pickNewTarget():
     global targetX, targetY, targetSize, targetOnLeft
     global formerTargetX, formerTargetY, formerTargetSize
     global targetShownTime, enteredEdgeTime, hasEnteredEdge, insideEdgeLastFrame, overshootCount
+    global trial_sequence
 
+    if len(trial_sequence) == 0:
+        return
+
+    A, W = trial_sequence.pop(0)
+    targetSize = W
     formerTargetX, formerTargetY, formerTargetSize = targetX, targetY, targetSize
-    targetSize = random.randint(30, 100)
-    if targetOnLeft:
-        targetX = random.randint(targetSize // 2, WIDTH // 2 - targetSize // 2)
-    else:
-        targetX = random.randint(WIDTH // 2 + targetSize // 2, WIDTH - targetSize // 2)
-    targetOnLeft = not targetOnLeft
     targetY = HEIGHT // 2
+
+    # Alternate side placement
+    if targetOnLeft:
+        targetX = WIDTH // 2 - A // 2
+    else:
+        targetX = WIDTH // 2 + A // 2
+    targetOnLeft = not targetOnLeft
 
     targetShownTime = pygame.time.get_ticks()
     enteredEdgeTime = -1
@@ -291,14 +309,14 @@ while running:
         drawText("Click to begin a short trial session.", HEIGHT // 2 + 10, 18)
         drawText("Try clicking the targets as fast and accurately as you can.", HEIGHT // 2 + 40, 18)
     elif state == TRIAL:
-        drawText("Trial Session", 30)
-        drawText(f"Trial {trialCount + 1} of {totalTrialTargets}", HEIGHT - 30, 14)
+        drawText("Trial Session", 40)
+        drawText(f"Trial {trialCount + 1} of {totalTrialTargets}", HEIGHT - 30, 20)
     elif state == TRANSITION:
         drawText("Trial Session Complete!", HEIGHT // 2 - 60)
         drawText("Press 'C' to continue or 'R' to repeat the trial.", HEIGHT // 2 - 20, 18)
     elif state == EXPERIMENT:
-        drawText("Main Experiment", 30)
-        drawText(f"Trial {experimentCount + 1} of {totalExperimentTargets}", HEIGHT - 30, 14)
+        drawText("Main Experiment", 40)
+        drawText(f"Trial {experimentCount + 1} of {len(conditions) * repetitions}", HEIGHT - 30, 20)
     elif state == BREAK_SCREEN:
         drawText("Take a short break!", HEIGHT // 2 - 30)
         drawText(f"You've completed {experimentCount} of {totalExperimentTargets} trials.", HEIGHT // 2, 18)
