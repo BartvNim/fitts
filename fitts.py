@@ -38,7 +38,7 @@ random.seed(EXPERIMENT_SEED)
 # Fitts' Law fixed conditions
 distances = [200, 400, 600, 800]
 widths = [30, 50, 70]             
-repetitions = 10                 
+repetitions = 10          
 
 # Create all combinations
 conditions = [(A, W) for A in distances for W in widths]
@@ -61,8 +61,10 @@ formerTargetSize = 0
 trialCount = 0
 totalTrialTargets = 3
 experimentCount = 0
-totalExperimentTargets = 100
+totalExperimentTargets = len(conditions) * repetitions
 breakInterval = 20
+currentTrialSequence = []
+currentTrialIndex = 0
 
 # Timing
 targetShownTime = 0
@@ -135,12 +137,19 @@ def pickNewTarget():
     global targetX, targetY, targetSize, targetOnLeft
     global formerTargetX, formerTargetY, formerTargetSize
     global targetShownTime, enteredEdgeTime, hasEnteredEdge, insideEdgeLastFrame, overshootCount
-    global trial_sequence
+    global state, currentTrialSequence, currentTrialIndex
 
-    if len(trial_sequence) == 0:
-        return
+    if state == TRIAL:
+        if not currentTrialSequence:
+            currentTrialSequence = random.sample(conditions, totalTrialTargets)
+            currentTrialIndex = 0
+        A, W = currentTrialSequence[currentTrialIndex]
+        currentTrialIndex += 1
+    else:  # EXPERIMENT
+        if not currentTrialSequence:
+            currentTrialSequence = trial_sequence.copy()
+        A, W = currentTrialSequence.pop(0)
 
-    A, W = trial_sequence.pop(0)
     targetSize = W
     formerTargetX, formerTargetY, formerTargetSize = targetX, targetY, targetSize
     targetY = HEIGHT // 2
@@ -316,7 +325,7 @@ while running:
         drawText("Press 'C' to continue or 'R' to repeat the trial.", HEIGHT // 2 - 20, 18)
     elif state == EXPERIMENT:
         drawText("Main Experiment", 40)
-        drawText(f"Trial {experimentCount + 1} of {len(conditions) * repetitions}", HEIGHT - 30, 20)
+        drawText(f"Trial {experimentCount + 1} of {totalExperimentTargets}", HEIGHT - 30, 20)
     elif state == BREAK_SCREEN:
         drawText("Take a short break!", HEIGHT // 2 - 30)
         drawText(f"You've completed {experimentCount} of {totalExperimentTargets} trials.", HEIGHT // 2, 18)
