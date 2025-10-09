@@ -42,10 +42,11 @@ repetitions = 10
 
 # Create all combinations
 conditions = [(A, W) for A in distances for W in widths]
-trial_sequence = conditions * repetitions
-
-random.shuffle(trial_sequence)
-
+random.shuffle(conditions)
+trial_sequence = []
+for A, W in conditions:
+    trial_sequence.extend([(A, W)] * repetitions)
+trial_sequence = [trial_sequence[0]] + trial_sequence
 state = START_SCREEN
 
 # Target properties
@@ -62,7 +63,7 @@ trialCount = 0
 totalTrialTargets = 3
 experimentCount = 0
 totalExperimentTargets = len(conditions) * repetitions
-breakInterval = 20
+breakInterval = 10
 currentTrialSequence = []
 currentTrialIndex = 0
 
