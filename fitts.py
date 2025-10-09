@@ -22,6 +22,16 @@ except ImportError as e:
     sys.exit(1)
 
 # ==========================
+# DPI & Scaling Configuration
+# ==========================
+MOUSE_DPI = 1000          # Physical mouse DPI
+SCREEN_DPI = 150       # Typical screen DPI
+SENSITIVITY = 1.0         # Pointer speed multiplier
+
+# Scale factor to convert raw mouse counts to screen pixels
+scale_factor = SENSITIVITY * (SCREEN_DPI / MOUSE_DPI)
+
+# ==========================
 # Experiment States
 # ==========================
 START_SCREEN = 0
@@ -36,8 +46,8 @@ EXPERIMENT_SEED = 42
 random.seed(EXPERIMENT_SEED)
 
 # Fitts' Law fixed conditions
-distances = [200, 400, 600, 800]
-widths = [30, 50, 70]             
+distances = [250, 500, 750, 1000]
+widths = [25, 50, 75]             
 repetitions = 10          
 
 # Create all combinations
@@ -96,11 +106,10 @@ logData = (
     "timeSinceTarget,timeSinceEdge,clicked,hit,overshootCount,raw_dx,raw_dy,raw_buttons\n"
 )
 logSaved = False
-logFileName = f"./mouse_log_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
+logFileName = f"mouse_log_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
 
 # Screen config
 WIDTH, HEIGHT = 800, 400
-
 
 # Thread-safe raw mouse position
 class RawPointer:
@@ -110,14 +119,16 @@ class RawPointer:
         self.lock = threading.Lock()
 
     def update(self, dx, dy):
+        # Convert raw mouse counts to pixels
+        dx_pixels = dx * scale_factor
+        dy_pixels = dy * scale_factor
         with self.lock:
-            self.x = max(0, min(WIDTH, self.x + dx))
-            self.y = max(0, min(HEIGHT, self.y + dy))
+            self.x = max(0, min(WIDTH, self.x + dx_pixels))
+            self.y = max(0, min(HEIGHT, self.y + dy_pixels))
 
     def get_pos(self):
         with self.lock:
             return int(self.x), int(self.y)
-
 
 pointer = RawPointer(WIDTH, HEIGHT)
 
@@ -235,12 +246,13 @@ def saveLog():
 pygame.init()
 screen = pygame.display.set_mode((0, 0), pygame.NOFRAME)
 WIDTH, HEIGHT = screen.get_size()
+print(f"Screen size: {WIDTH}x{HEIGHT}")
 pygame.display.set_caption("1D Fitts' Law Experiment")
 font = pygame.font.Font(None, 24)
 clock = pygame.time.Clock()
 
 # Initialize libpointing
-device_uri = b"any:?debugLevel=2"
+device_uri = b"any:?debugLevel=2&rawInput=true"
 pointing_device = PointingDevice(device_uri)
 pointing_device.setCallback(pointing_callback)
 pygame.mouse.set_visible(False)
